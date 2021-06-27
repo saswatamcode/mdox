@@ -13,6 +13,7 @@ require (
 	github.com/gohugoio/hugo v0.74.3
 	github.com/kr/pretty v0.2.1 // indirect
 	github.com/mattn/go-shellwords v1.0.10
+	github.com/mattn/go-sqlite3 v1.14.7
 	github.com/mitchellh/mapstructure v1.2.2 // indirect
 	github.com/oklog/run v1.1.0
 	github.com/pkg/errors v0.9.1
