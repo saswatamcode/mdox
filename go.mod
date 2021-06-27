@@ -16,6 +16,7 @@ require (
 	github.com/mattn/go-isatty v0.0.12
 	github.com/mattn/go-runewidth v0.0.13 // indirect
 	github.com/mattn/go-shellwords v1.0.10
+	github.com/mattn/go-sqlite3 v1.14.7
 	github.com/mitchellh/mapstructure v1.2.2 // indirect
 	github.com/muesli/reflow v0.2.1-0.20210115123740-9e1d0d53df68 // indirect
 	github.com/oklog/run v1.1.0
