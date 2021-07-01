@@ -7,7 +7,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"hash/fnv"
 	"io"
 	"net/http"
 	"os"
@@ -144,8 +143,13 @@ type futureResult struct {
 // NewValidator returns mdformatter.LinkTransformer that crawls all links.
 // TODO(bwplotka): Add optimization and debug modes - this is the main source of latency and pain.
 func NewValidator(ctx context.Context, logger log.Logger, linksValidateConfig []byte, anchorDir string, storage *cache.Storage) (mdformatter.LinkTransformer, error) {
+	var config Config
 	var err error
-	config := Config{}
+	defaultValidity, err := time.ParseDuration("120h")
+	if err != nil {
+		return nil, err
+	}
+	config = Config{CacheValidity: defaultValidity}
 	if string(linksValidateConfig) != "" {
 		config, err = ParseConfig(linksValidateConfig)
 		if err != nil {
@@ -159,14 +163,16 @@ func NewValidator(ctx context.Context, logger log.Logger, linksValidateConfig []
 		localLinks:     map[string]*[]string{},
 		remoteLinks:    map[string]error{},
 		c:              colly.NewCollector(colly.Async(), colly.StdlibContext(ctx)),
-		storage:        storage,
+		storage:        nil,
 		destFutures:    map[futureKey]*futureResult{},
 	}
 	// Set very soft limits.
 	// E.g github has 50-5000 https://docs.github.com/en/free-pro-team@latest/rest/reference/rate-limit limit depending
 	// on api (only search is below 100).
-	if v.storage != nil {
-		err = v.c.SetStorage(v.storage)
+	if !v.validateConfig.NoCache && storage != nil {
+		v.storage = storage
+		v.storage.Validity = v.validateConfig.CacheValidity
+		err = v.storage.Init()
 		if err != nil {
 			return nil, err
 		}
@@ -185,25 +191,17 @@ func NewValidator(ctx context.Context, logger log.Logger, linksValidateConfig []
 	v.c.OnScraped(func(response *colly.Response) {
 		v.rMu.Lock()
 		defer v.rMu.Unlock()
+		if v.storage != nil {
+			err := v.storage.CacheURL(response.Ctx.Get(originalURLKey))
+			if err != nil {
+				v.remoteLinks[response.Ctx.Get(originalURLKey)] = errors.Wrapf(err, "remote link not saved to cache %v", response.Ctx.Get(originalURLKey))
+			}
+		}
 		v.remoteLinks[response.Ctx.Get(originalURLKey)] = nil
 	})
 	v.c.OnError(func(response *colly.Response, err error) {
 		v.rMu.Lock()
 		defer v.rMu.Unlock()
-		// Colly stores requests in cache, even when they have errors.
-		// So need to delete requests with errors from cache database.
-		if v.storage != nil {
-			h := fnv.New64a()
-			_, writeErr := h.Write([]byte(response.Ctx.Get(originalURLKey)))
-			if writeErr != nil {
-				v.remoteLinks[response.Ctx.Get(originalURLKey)] = errors.Wrapf(writeErr, "%q could not build requestID %v", response.Request.URL.String(), response.StatusCode)
-			}
-			delErr := v.storage.DeleteRequest(h.Sum64())
-			if delErr != nil {
-				v.remoteLinks[response.Ctx.Get(originalURLKey)] = errors.Wrapf(delErr, "%q could not delete from cache %v", response.Request.URL.String(), response.StatusCode)
-			}
-		}
-
 		retriesStr := response.Ctx.Get(numberOfRetriesKey)
 		retries, _ := strconv.Atoi(retriesStr)
 		switch response.StatusCode {
