@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - testc
     tags:
   pull_request:
 
