@@ -5,11 +5,13 @@ package mdgen
 
 import (
 	"bytes"
+	"io/ioutil"
 	"os/exec"
 	"strconv"
 	"strings"
 
 	"github.com/bwplotka/mdox/pkg/mdformatter"
+	"github.com/bwplotka/mdox/pkg/yamlgen"
 	"github.com/mattn/go-shellwords"
 
 	"github.com/pkg/errors"
@@ -18,6 +20,7 @@ import (
 const (
 	infoStringKeyExec     = "mdox-exec"
 	infoStringKeyExitCode = "mdox-expect-exit-code"
+	infoStringKeyGoStruct = "mdox-gen-go-struct"
 )
 
 type genCodeBlockTransformer struct{}
@@ -55,6 +58,11 @@ func (t *genCodeBlockTransformer) TransformCodeBlock(ctx mdformatter.SourceConte
 				return nil, errors.Errorf("got %q without variable. Expected format is e.g ```yaml %s=\"<value1>\" but got %s", val[0], infoStringKeyExitCode, string(infoString))
 			}
 			infoStringAttr[val[0]] = val[1]
+		case infoStringKeyGoStruct:
+			if len(val) != 2 {
+				return nil, errors.Errorf("got %q without variable. Expected format is e.g ```yaml %s=\"<value1>\" but got %s", val[0], infoStringKeyGoStruct, string(infoString))
+			}
+			infoStringAttr[val[0]] = val[1]
 		}
 	}
 
@@ -85,6 +93,39 @@ func (t *genCodeBlockTransformer) TransformCodeBlock(ctx mdformatter.SourceConte
 			return nil, errors.Wrapf(err, "run %v, out: %v", execCmd, b.String())
 		}
 		return b.Bytes(), nil
+	}
+
+	if fileWithStruct, ok := infoStringAttr[infoStringKeyGoStruct]; ok {
+		// This is like mdox-gen-go-struct=<filename>:structname for now.
+		fs := strings.Split(fileWithStruct, ":")
+		src, err := ioutil.ReadFile(fs[0])
+		if err != nil {
+			return nil, errors.Wrapf(err, "read file for yaml gen %v", fs[0])
+		}
+
+		generatedCode, err := yamlgen.GenGoCode(src)
+		if err != nil {
+			return nil, errors.Wrapf(err, "generate code for yaml gen %v", fs[0])
+		}
+
+		b, err := yamlgen.ExecGoCode(ctx, generatedCode)
+		if err != nil {
+			return nil, errors.Wrapf(err, "execute generated code for yaml gen %v", fs[0])
+		}
+
+		// TODO(saswatamcode): This feels sort of hacky, need better way of printing.
+		// Remove `---` and check struct name.
+		yamls := bytes.Split(b, []byte("---"))
+		for _, yaml := range yamls {
+			lines := bytes.Split(yaml, []byte("\n"))
+			if len(lines) > 1 {
+				if string(lines[1]) == fs[1] {
+					ret := bytes.Join(lines[2:len(lines)-1], []byte("\n"))
+					ret = append(ret, []byte("\n")...)
+					return ret, nil
+				}
+			}
+		}
 	}
 
 	panic("should never get here")
