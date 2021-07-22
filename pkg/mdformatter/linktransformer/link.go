@@ -155,7 +155,7 @@ func NewValidator(ctx context.Context, logger log.Logger, linksValidateConfig []
 		validateConfig: config,
 		localLinks:     map[string]*[]string{},
 		remoteLinks:    map[string]error{},
-		c:              colly.NewCollector(colly.Async(), colly.StdlibContext(ctx)),
+		c:              colly.NewCollector(colly.Async(true), colly.StdlibContext(ctx)),
 		destFutures:    map[futureKey]*futureResult{},
 	}
 	// Set very soft limits.
@@ -163,7 +163,7 @@ func NewValidator(ctx context.Context, logger log.Logger, linksValidateConfig []
 	// on api (only search is below 100).
 	if err := v.c.Limit(&colly.LimitRule{
 		DomainGlob:  "*",
-		Parallelism: 100,
+		Parallelism: 2,
 	}); err != nil {
 		return nil, err
 	}
