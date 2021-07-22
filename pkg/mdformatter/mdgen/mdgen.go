@@ -5,7 +5,6 @@ package mdgen
 
 import (
 	"bytes"
-	"io/ioutil"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -95,22 +94,26 @@ func (t *genCodeBlockTransformer) TransformCodeBlock(ctx mdformatter.SourceConte
 		return b.Bytes(), nil
 	}
 
-	if fileWithStruct, ok := infoStringAttr[infoStringKeyGoStruct]; ok {
+	if structLocation, ok := infoStringAttr[infoStringKeyGoStruct]; ok {
 		// This is like mdox-gen-go-struct=<filename>:structname for now.
-		fs := strings.Split(fileWithStruct, ":")
-		src, err := ioutil.ReadFile(fs[0])
+		sn := strings.Split(structLocation, ":")
+
+		// Get source code of struct.
+		src, err := yamlgen.GetSource(ctx, structLocation)
 		if err != nil {
-			return nil, errors.Wrapf(err, "read file for yaml gen %v", fs[0])
+			return nil, errors.Wrapf(err, "get source code for yaml gen %v", structLocation)
 		}
 
+		// Generate YAML gen code from source.
 		generatedCode, err := yamlgen.GenGoCode(src)
 		if err != nil {
-			return nil, errors.Wrapf(err, "generate code for yaml gen %v", fs[0])
+			return nil, errors.Wrapf(err, "generate code for yaml gen %v", sn[0])
 		}
 
+		// Execute and fetch output of generated code.
 		b, err := yamlgen.ExecGoCode(ctx, generatedCode)
 		if err != nil {
-			return nil, errors.Wrapf(err, "execute generated code for yaml gen %v", fs[0])
+			return nil, errors.Wrapf(err, "execute generated code for yaml gen %v", sn[0])
 		}
 
 		// TODO(saswatamcode): This feels sort of hacky, need better way of printing.
@@ -119,7 +122,7 @@ func (t *genCodeBlockTransformer) TransformCodeBlock(ctx mdformatter.SourceConte
 		for _, yaml := range yamls {
 			lines := bytes.Split(yaml, []byte("\n"))
 			if len(lines) > 1 {
-				if string(lines[1]) == fs[1] {
+				if string(lines[1]) == sn[1] {
 					ret := bytes.Join(lines[2:len(lines)-1], []byte("\n"))
 					ret = append(ret, []byte("\n")...)
 					return ret, nil
